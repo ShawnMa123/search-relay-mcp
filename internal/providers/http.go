@@ -57,6 +57,9 @@ func fetch(client *http.Client, req *http.Request) (*httpResult, error) {
 	body, err := readBounded(resp.Body, maxResponseBytes)
 	if err != nil {
 		if errors.Is(err, errBodyTooLarge) {
+			if resp.StatusCode < 200 || resp.StatusCode > 299 {
+				return nil, statusError(resp.StatusCode, resp.Header)
+			}
 			return nil, &search.ProviderError{Kind: search.KindInvalidResponse, Status: resp.StatusCode}
 		}
 		return nil, &search.ProviderError{Kind: search.KindNetwork}

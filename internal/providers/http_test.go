@@ -132,6 +132,25 @@ func TestHTTPLimitsDecodedBody(t *testing.T) {
 	})
 }
 
+func TestHTTPOversizedErrorBodyKeepsStatusClass(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write(bytes.Repeat([]byte("x"), 2<<20))
+	}))
+	defer srv.Close()
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
+	var out map[string]any
+	pe := providerError(t, doJSON(NewHTTPClient(), req, &out))
+	if pe.Kind != search.KindRateLimited || pe.Status != http.StatusTooManyRequests {
+		t.Fatalf("got kind=%s status=%d", pe.Kind, pe.Status)
+	}
+	if pe.RetryAt.IsZero() {
+		t.Fatal("Retry-After lost on oversized body")
+	}
+}
+
 func TestHTTPClassifiesStatus(t *testing.T) {
 	cases := []struct {
 		status int
