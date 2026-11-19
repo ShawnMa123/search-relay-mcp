@@ -55,6 +55,9 @@ type ProviderError struct {
 	Kind    Kind
 	Status  int
 	RetryAt time.Time
+	// ResetAt is a documented quota reset (for example TinyFish's next UTC
+	// midnight). Unlike RetryAt it is not bounded by the router's 1h cap.
+	ResetAt time.Time
 }
 
 func (e *ProviderError) Error() string {
