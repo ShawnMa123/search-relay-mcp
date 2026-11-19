@@ -46,6 +46,9 @@ const (
 	KindAuthFailed      Kind = "auth_failed"
 	KindUpstreamError   Kind = "upstream_error"
 	KindInvalidResponse Kind = "invalid_response"
+	// KindCooldown marks a provider skipped because an earlier call put it
+	// in cooldown. It is only used in aggregated tool errors.
+	KindCooldown Kind = "cooldown"
 )
 
 // ProviderError carries a safe classification for one upstream failure.
