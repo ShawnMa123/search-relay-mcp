@@ -130,6 +130,29 @@ func TestTinyFishPaymentRequiredUsesNormalQuota(t *testing.T) {
 	}
 }
 
+func TestTinyFishTruncatedDailyBodyNotQuota(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "4096")
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"code":"RATE_LIMIT_EXCEEDED","details":{"reason":"free_allowance_exhausted"`))
+	}))
+	defer srv.Close()
+
+	_, err := newTinyFish(NewHTTPClient(), "k", srv.URL, time.Now).
+		Search(context.Background(), search.Request{Query: "go", Limit: 5})
+	pe := providerError(t, err)
+	if pe.Kind != search.KindRateLimited {
+		t.Fatalf("kind = %s", pe.Kind)
+	}
+	if !pe.ResetAt.IsZero() {
+		t.Fatalf("incomplete body set ResetAt: %v", pe.ResetAt)
+	}
+	if pe.RetryAt.IsZero() {
+		t.Fatal("Retry-After lost")
+	}
+}
+
 func TestTinyFishDoesNotLeakErrorBody(t *testing.T) {
 	const secret = "tinyfish-upstream-secret"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

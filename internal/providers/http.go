@@ -56,13 +56,13 @@ func fetch(client *http.Client, req *http.Request) (*httpResult, error) {
 	defer resp.Body.Close()
 	body, err := readBounded(resp.Body, maxResponseBytes)
 	if err != nil {
-		if errors.Is(err, errBodyTooLarge) {
-			if resp.StatusCode < 200 || resp.StatusCode > 299 {
-				return nil, statusError(resp.StatusCode, resp.Header)
-			}
-			return nil, &search.ProviderError{Kind: search.KindInvalidResponse, Status: resp.StatusCode}
+		// Headers are already trustworthy: an unreadable error body must
+		// still drive rate-limit/quota cool-downs. Incomplete 2xx bodies are
+		// never treated as parseable success.
+		if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			return nil, statusError(resp.StatusCode, resp.Header)
 		}
-		return nil, &search.ProviderError{Kind: search.KindNetwork}
+		return nil, &search.ProviderError{Kind: search.KindInvalidResponse, Status: resp.StatusCode}
 	}
 	return &httpResult{Status: resp.StatusCode, Header: resp.Header, Body: body}, nil
 }

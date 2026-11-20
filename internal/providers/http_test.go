@@ -151,6 +151,38 @@ func TestHTTPOversizedErrorBodyKeepsStatusClass(t *testing.T) {
 	}
 }
 
+func TestHTTPTruncatedErrorBodyKeepsStatus(t *testing.T) {
+	cases := []struct {
+		status int
+		kind   search.Kind
+	}{
+		{http.StatusTooManyRequests, search.KindRateLimited},
+		{http.StatusPaymentRequired, search.KindQuotaExhausted},
+	}
+	for _, tc := range cases {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Length", "4096")
+				w.Header().Set("Retry-After", "30")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(`{"error":{"code":"RATE_LIMIT_EXCEEDED","details":{"reason":"free_allowance_exhausted"`))
+			}))
+			defer srv.Close()
+
+			before := time.Now()
+			req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
+			var out map[string]any
+			pe := providerError(t, doJSON(NewHTTPClient(), req, &out))
+			if pe.Kind != tc.kind || pe.Status != tc.status {
+				t.Fatalf("got kind=%s status=%d", pe.Kind, pe.Status)
+			}
+			if pe.RetryAt.Before(before.Add(29*time.Second)) || pe.RetryAt.After(time.Now().Add(31*time.Second)) {
+				t.Fatalf("RetryAt = %v", pe.RetryAt)
+			}
+		})
+	}
+}
+
 func TestHTTPClassifiesStatus(t *testing.T) {
 	cases := []struct {
 		status int
