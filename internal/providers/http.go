@@ -3,6 +3,7 @@ package providers
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"io"
@@ -30,8 +31,17 @@ func NewHTTPClient() *http.Client {
 			Proxy:               nil,
 			DialContext:         (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
 			TLSHandshakeTimeout: 5 * time.Second,
-			DisableKeepAlives:   true,
-			ForceAttemptHTTP2:   true,
+			// Pin ALPN to HTTP/1.1 and leave TLSNextProto as a non-nil empty
+			// map so the transport cannot enable HTTP/2 implicitly. HTTP/2
+			// can transparently retry refused streams, which would break the
+			// one-request-per-provider contract.
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+				NextProtos: []string{"http/1.1"},
+			},
+			TLSNextProto:      map[string]func(string, *tls.Conn) http.RoundTripper{},
+			DisableKeepAlives: true,
+			ForceAttemptHTTP2: false,
 		},
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse

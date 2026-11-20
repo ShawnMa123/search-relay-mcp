@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +29,55 @@ func providerError(t *testing.T, err error) *search.ProviderError {
 		t.Fatalf("error %v is not *search.ProviderError", err)
 	}
 	return pe
+}
+
+func TestHTTPClientUsesHTTP11(t *testing.T) {
+	protos := make(chan string, 1)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		protos <- r.Proto
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+
+	client := NewHTTPClient()
+	tr, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport type = %T", client.Transport)
+	}
+	if tr.ForceAttemptHTTP2 {
+		t.Fatal("ForceAttemptHTTP2 is enabled")
+	}
+	if tr.TLSNextProto == nil || len(tr.TLSNextProto) != 0 {
+		t.Fatalf("TLSNextProto = %v, want non-nil empty map", tr.TLSNextProto)
+	}
+	if tr.Proxy != nil {
+		t.Fatal("proxy environment inheritance enabled")
+	}
+
+	tlsConfig := tr.TLSClientConfig
+	if tlsConfig == nil {
+		tlsConfig = &tls.Config{}
+	}
+	tlsConfig = tlsConfig.Clone()
+	tlsConfig.InsecureSkipVerify = true
+	tr.TLSClientConfig = tlsConfig
+
+	resp, err := client.Get(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	select {
+	case got := <-protos:
+		if got != "HTTP/1.1" {
+			t.Fatalf("negotiated protocol = %s", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not receive the request")
+	}
 }
 
 func TestHTTPRejectsRedirect(t *testing.T) {
