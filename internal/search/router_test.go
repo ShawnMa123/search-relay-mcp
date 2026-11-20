@@ -313,6 +313,71 @@ func TestRouterHonorsCancellation(t *testing.T) {
 	})
 }
 
+func TestRouterExpiredBudgetIsNotEmptySuccess(t *testing.T) {
+	clock := newFakeClock(time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC))
+
+	t.Run("budget expiry after an empty result is an error", func(t *testing.T) {
+		empty := &mockProvider{name: "keenable", fn: func(context.Context, Request) ([]Result, error) {
+			return []Result{}, nil
+		}}
+		blocking := &mockProvider{name: "tinyfish", fn: func(ctx context.Context, _ Request) ([]Result, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}}
+		third := &mockProvider{name: "anysearch", fn: func(context.Context, Request) ([]Result, error) {
+			return okResults(1), nil
+		}}
+		opts := defaultOpts(clock)
+		opts.TotalTimeout = 50 * time.Millisecond
+		r := testRouter([]Provider{empty, blocking, third}, opts)
+
+		resp, err := r.Search(context.Background(), Request{Query: "go", Limit: 5})
+		var unavailable *UnavailableError
+		if !errors.As(err, &unavailable) {
+			t.Fatalf("error = %v, response = %+v", err, resp)
+		}
+		if third.calls.Load() != 0 {
+			t.Fatalf("third provider called %d times", third.calls.Load())
+		}
+	})
+
+	t.Run("caller cancellation after an empty result is an error", func(t *testing.T) {
+		empty := &mockProvider{name: "keenable", fn: func(context.Context, Request) ([]Result, error) {
+			return []Result{}, nil
+		}}
+		started := make(chan struct{})
+		blocking := &mockProvider{name: "tinyfish", fn: func(ctx context.Context, _ Request) ([]Result, error) {
+			close(started)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}}
+		third := &mockProvider{name: "anysearch", fn: func(context.Context, Request) ([]Result, error) {
+			return okResults(1), nil
+		}}
+		r := testRouter([]Provider{empty, blocking, third}, defaultOpts(clock))
+
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			_, err := r.Search(ctx, Request{Query: "go", Limit: 5})
+			done <- err
+		}()
+		<-started
+		cancel()
+		select {
+		case err := <-done:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("error = %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("search did not return after cancellation")
+		}
+		if third.calls.Load() != 0 {
+			t.Fatalf("third provider called %d times", third.calls.Load())
+		}
+	})
+}
+
 func TestRouterCooldown(t *testing.T) {
 	clock := newFakeClock(time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC))
 

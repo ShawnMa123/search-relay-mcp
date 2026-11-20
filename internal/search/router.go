@@ -141,6 +141,14 @@ func (r *Router) Search(ctx context.Context, req Request) (Response, error) {
 		}
 	}
 
+	if ctx.Err() != nil {
+		return Response{}, ctx.Err()
+	}
+	if totalCtx.Err() != nil {
+		// The chain did not finish inside the total budget, so an earlier
+		// empty reply is not a final answer.
+		return Response{}, &UnavailableError{Attempts: attempts}
+	}
 	if firstEmpty != "" {
 		return Response{Query: validated.Query, Provider: firstEmpty, Results: []Result{}}, nil
 	}
