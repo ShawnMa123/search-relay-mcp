@@ -1,0 +1,34 @@
+services:
+  search-relay-mcp:
+    build:
+      context: .
+    image: search-relay-mcp:local
+    ports:
+      - "127.0.0.1:18081:18081"
+    environment:
+      LISTEN_ADDR: "0.0.0.0:18081"
+      MCP_BEARER_TOKEN: "${MCP_BEARER_TOKEN:?set MCP_BEARER_TOKEN in .env}"
+      SEARCH_PROVIDERS: "${SEARCH_PROVIDERS:-keenable,tinyfish,anysearch}"
+      KEENABLE_API_KEY: "${KEENABLE_API_KEY:-}"
+      TINYFISH_API_KEY: "${TINYFISH_API_KEY:-}"
+      ANYSEARCH_API_KEY: "${ANYSEARCH_API_KEY:-}"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    cpus: 0.50
+    pids_limit: 64
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/search-relay-mcp", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
