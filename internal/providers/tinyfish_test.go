@@ -153,6 +153,30 @@ func TestTinyFishTruncatedDailyBodyNotQuota(t *testing.T) {
 	}
 }
 
+func TestTinyFishLimitAfterDedup(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"query":"go","results":[
+			{"title":"first","url":"https://example.com/a#one","snippet":""},
+			{"title":"second","url":"https://example.com/a#two","snippet":""},
+			{"title":"third","url":"https://example.com/b","snippet":""}
+		],"total_results":3,"page":0}`))
+	}))
+	defer srv.Close()
+
+	raw, err := newTinyFish(NewHTTPClient(), "k", srv.URL, time.Now).
+		Search(context.Background(), search.Request{Query: "go", Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := search.NormalizeResults(raw, 2)
+	if len(got) != 2 {
+		t.Fatalf("results = %+v", got)
+	}
+	if got[0].URL != "https://example.com/a#one" || got[1].URL != "https://example.com/b" {
+		t.Fatalf("results = %+v", got)
+	}
+}
+
 func TestTinyFishDoesNotLeakErrorBody(t *testing.T) {
 	const secret = "tinyfish-upstream-secret"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -99,9 +99,6 @@ func (t *tinyfish) Search(ctx context.Context, req search.Request) ([]search.Res
 			PublishedAt: item.Date,
 		})
 	}
-	if req.Limit > 0 && len(out) > req.Limit {
-		out = out[:req.Limit]
-	}
 	return out, nil
 }
 
